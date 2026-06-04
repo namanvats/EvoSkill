@@ -40,6 +40,33 @@ from .harvest import (
     harvest,
     slugify_skill_name,
 )
+from .library import Skill, SkillLibrary, parse_skill_file
+from .similarity import (
+    EmbeddingCache,
+    EmbeddingSimilarity,
+    LexicalSimilarity,
+    SimilarityBackend,
+    make_openai_embedder,
+    make_similarity_backend,
+)
+from .skill_stats import (
+    SkillStats,
+    SkillStatsStore,
+    assign_credit,
+    assign_credit_batch,
+)
+from .lifecycle import (
+    DeprecationReport,
+    DuplicateGroup,
+    SkillMatch,
+    archive_skill,
+    build_merge_query,
+    evaluate_deprecation,
+    find_duplicates,
+    propose_merge,
+    restore_skill,
+    select_skills,
+)
 
 __all__ = [
     # episode model
@@ -76,4 +103,31 @@ __all__ = [
     "build_readers",
     "harvest",
     "slugify_skill_name",
+    # library
+    "Skill",
+    "SkillLibrary",
+    "parse_skill_file",
+    # similarity
+    "SimilarityBackend",
+    "LexicalSimilarity",
+    "EmbeddingSimilarity",
+    "EmbeddingCache",
+    "make_openai_embedder",
+    "make_similarity_backend",
+    # skill stats / credit
+    "SkillStats",
+    "SkillStatsStore",
+    "assign_credit",
+    "assign_credit_batch",
+    # lifecycle
+    "DuplicateGroup",
+    "SkillMatch",
+    "DeprecationReport",
+    "find_duplicates",
+    "select_skills",
+    "evaluate_deprecation",
+    "archive_skill",
+    "restore_skill",
+    "build_merge_query",
+    "propose_merge",
 ]

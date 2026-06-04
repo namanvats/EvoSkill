@@ -49,6 +49,32 @@ class TestContinuousConfigParsing:
         assert cfg.continuous.focus == "both"
 
 
+class TestLifecycleConfig:
+    def test_defaults(self, tmp_path):
+        cfg = load_config(config_path=_write_project(tmp_path))
+        lc = cfg.continuous.lifecycle
+        assert lc.similarity_backend == "embedding"
+        assert lc.embedding_provider == "openai"
+        assert lc.embedding_model == "text-embedding-3-small"
+        assert lc.dedupe_similarity == 0.88
+        assert lc.deprecation_strikes == 3
+        assert lc.retrieval_top_k == 6
+
+    def test_nested_section_parsed(self, tmp_path):
+        toml = (
+            "\n[continuous]\nenabled = true\n"
+            "\n[continuous.lifecycle]\n"
+            'similarity_backend = "lexical"\n'
+            "dedupe_similarity = 0.75\n"
+            "retrieval_top_k = 10\n"
+        )
+        cfg = load_config(config_path=_write_project(tmp_path, toml))
+        assert cfg.continuous.enabled is True
+        assert cfg.continuous.lifecycle.similarity_backend == "lexical"
+        assert cfg.continuous.lifecycle.dedupe_similarity == 0.75
+        assert cfg.continuous.lifecycle.retrieval_top_k == 10
+
+
 class TestDerivedPaths:
     def test_traces_root_defaults_to_harbor_jobs(self, tmp_path):
         cfg = load_config(config_path=_write_project(tmp_path))

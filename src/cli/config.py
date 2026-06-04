@@ -84,11 +84,23 @@ class HarborConfig:
 
 
 @dataclass
+class LifecycleConfig:
+    """Skill-library lifecycle management ([continuous.lifecycle])."""
+    similarity_backend: Literal['embedding', 'lexical'] = 'embedding'
+    embedding_provider: str = 'openai'          # OpenAI-compatible; else falls back to lexical
+    embedding_model: str = 'text-embedding-3-small'
+    dedupe_similarity: float = 0.88             # cosine threshold for "redundant"
+    deprecation_baseline: float = 0.0           # contribution floor
+    deprecation_strikes: int = 3                # windows below floor before retiring
+    retrieval_top_k: int = 6                    # skills to surface per task
+
+
+@dataclass
 class ContinuousConfig:
     """Continuous evolution: learn skills from real usage traces.
 
-    Phase 1 (harvest) uses the harvest-relevant fields below. Later phases add
-    graduation/lifecycle/signal settings to this same section.
+    Phase 1 (harvest) uses the harvest-relevant fields below; Phase 2 adds the
+    nested `lifecycle` section. Later phases add graduation/signal settings here.
     """
     enabled: bool = False
     trace_sources: list[str] = field(default_factory=lambda: ['harbor'])  # harbor | goose | jsonl
@@ -102,6 +114,7 @@ class ContinuousConfig:
     distiller_model: str | None = None    # defaults to harness.model
     concurrency: int = 4                  # parallel distiller calls
     success_threshold: float = 1.0        # verifier reward >= this counts as success
+    lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
 
 
 @dataclass
@@ -197,6 +210,23 @@ class ProjectConfig:
     def continuous_candidates_dir(self) -> Path:
         """Where harvested candidate skills are buffered for review."""
         return self.evoskill_dir / 'continuous' / 'candidates'
+
+    @property
+    def skills_dir(self) -> Path:
+        """The live skill library."""
+        return self.project_root / '.claude' / 'skills'
+
+    @property
+    def continuous_skill_stats_path(self) -> Path:
+        return self.evoskill_dir / 'continuous' / 'skill_stats.json'
+
+    @property
+    def continuous_embeddings_cache_path(self) -> Path:
+        return self.evoskill_dir / 'continuous' / 'embeddings_cache.json'
+
+    @property
+    def continuous_deprecated_dir(self) -> Path:
+        return self.evoskill_dir / 'continuous' / 'deprecated'
 
 
 def _find_project_root(start: Path | None = None) -> Path | None:
@@ -314,9 +344,13 @@ def load_config(
     harbor_raw = dict(raw.get('harbor', {}))
     harbor = HarborConfig(**harbor_raw) if harbor_raw else HarborConfig()
 
-    # Parse [continuous] section (optional)
+    # Parse [continuous] section (optional), including the nested
+    # [continuous.lifecycle] table.
     continuous_raw = dict(raw.get('continuous', {}))
+    lifecycle_raw = continuous_raw.pop('lifecycle', None)
     continuous = ContinuousConfig(**continuous_raw) if continuous_raw else ContinuousConfig()
+    if lifecycle_raw:
+        continuous.lifecycle = LifecycleConfig(**lifecycle_raw)
 
     return ProjectConfig(
         harness=harness,

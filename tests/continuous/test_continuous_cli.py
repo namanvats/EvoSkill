@@ -13,9 +13,16 @@ from click.testing import CliRunner
 
 from src.cli.commands.candidates import candidates_cmd
 from src.cli.commands.harvest import harvest_cmd
+from src.cli.commands.library import library_cmd
 from src.continuous.candidates import Candidate, CandidateStore
 
 from .conftest import make_trial
+
+
+def _write_skill(skills_dir: Path, name: str, description: str) -> None:
+    d = skills_dir / name
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {description}\n---\n\nbody")
 
 
 def _project(tmp_path: Path, continuous_toml: str = "") -> Path:
@@ -96,3 +103,50 @@ class TestCandidatesCli:
         assert "b" in result.output
         # 'a' (pending) should be filtered out of the table rows
         assert "1 candidate(s)" in result.output
+
+
+class TestLibraryCli:
+    # Force lexical similarity so tests never hit a real embedding API.
+    # Lower dedupe threshold to match lexical cosine scores (~0.78 for paraphrases).
+    LEXICAL = '\n[continuous.lifecycle]\nsimilarity_backend = "lexical"\ndedupe_similarity = 0.6\n'
+
+    def test_empty(self, tmp_path):
+        cfg = _project(tmp_path)
+        result = CliRunner().invoke(library_cmd, ["--config", str(cfg)])
+        assert result.exit_code == 0
+        assert "No skills yet" in result.output
+
+    def test_list_with_stats(self, tmp_path):
+        cfg = _project(tmp_path)
+        _write_skill(tmp_path / ".claude" / "skills", "preserve-units", "include units")
+        result = CliRunner().invoke(library_cmd, ["--config", str(cfg)])
+        assert result.exit_code == 0
+        assert "preserve-units" in result.output
+        assert "1 skill(s)" in result.output
+
+    def test_duplicates(self, tmp_path):
+        cfg = _project(tmp_path, self.LEXICAL)
+        sd = tmp_path / ".claude" / "skills"
+        _write_skill(sd, "preserve-units", "always include measurement units in answers")
+        _write_skill(sd, "keep-units", "always include measurement units in answers please")
+        _write_skill(sd, "read-tables", "extract figures from financial tables")
+        result = CliRunner().invoke(library_cmd, ["--config", str(cfg), "--duplicates"])
+        assert result.exit_code == 0
+        # the two near-identical unit skills should be flagged similar
+        assert "preserve-units" in result.output and "keep-units" in result.output
+
+    def test_select(self, tmp_path):
+        cfg = _project(tmp_path, self.LEXICAL)
+        sd = tmp_path / ".claude" / "skills"
+        _write_skill(sd, "preserve-units", "include measurement units in numeric answers")
+        _write_skill(sd, "read-tables", "extract figures from financial tables")
+        result = CliRunner().invoke(
+            library_cmd, ["--config", str(cfg), "--select", "what units for this revenue value"])
+        assert result.exit_code == 0
+        assert "preserve-units" in result.output
+
+    def test_deprecated_empty(self, tmp_path):
+        cfg = _project(tmp_path)
+        result = CliRunner().invoke(library_cmd, ["--config", str(cfg), "--deprecated"])
+        assert result.exit_code == 0
+        assert "No deprecated skills" in result.output
