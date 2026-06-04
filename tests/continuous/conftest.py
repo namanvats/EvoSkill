@@ -151,6 +151,35 @@ def make_trial(
     return trial
 
 
+def make_episode(
+    episode_id: str,
+    task_text: str,
+    *,
+    outcome=None,
+    tools: list[str] | None = None,
+    source: str = "harbor",
+    final_output: str = "",
+):
+    """Build a TaskEpisode for clustering/harvest tests."""
+    from src.continuous.episode import ActionStep, Outcome, TaskEpisode, ToolCall
+
+    outcome = outcome if outcome is not None else Outcome.FAILURE
+    actions = []
+    if tools:
+        actions = [ActionStep(
+            step_id=1, source="agent",
+            tool_calls=[ToolCall(function_name=t) for t in tools],
+        )]
+    return TaskEpisode(
+        episode_id=episode_id,
+        source=source,
+        task_text=task_text,
+        actions=actions,
+        final_output=final_output,
+        outcome=outcome,
+    )
+
+
 @pytest.fixture
 def atif_v12():
     return _atif_v12_payload()

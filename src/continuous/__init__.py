@@ -31,6 +31,15 @@ from .collector import (
     parse_atif_trajectory,
     read_reward_file,
 )
+from .cluster import EpisodeCluster, cluster_episodes
+from .candidates import Candidate, CandidateStore, make_candidate_id
+from .harvest import (
+    HarvestResult,
+    build_distiller_query,
+    build_readers,
+    harvest,
+    slugify_skill_name,
+)
 
 __all__ = [
     # episode model
@@ -54,4 +63,17 @@ __all__ = [
     "TraceReadError",
     "parse_atif_trajectory",
     "read_reward_file",
+    # clustering
+    "EpisodeCluster",
+    "cluster_episodes",
+    # candidates
+    "Candidate",
+    "CandidateStore",
+    "make_candidate_id",
+    # harvest
+    "HarvestResult",
+    "build_distiller_query",
+    "build_readers",
+    "harvest",
+    "slugify_skill_name",
 ]

@@ -1,0 +1,74 @@
+"""Tests for the [continuous] config section and derived paths."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from src.cli.config import ContinuousConfig, load_config
+
+
+def _write_project(tmp_path: Path, continuous_toml: str = "") -> Path:
+    evoskill = tmp_path / ".evoskill"
+    evoskill.mkdir()
+    (evoskill / "config.toml").write_text('[harness]\nname = "claude"\n' + continuous_toml)
+    return evoskill / "config.toml"
+
+
+class TestContinuousConfigDefaults:
+    def test_defaults(self):
+        c = ContinuousConfig()
+        assert c.enabled is False
+        assert c.trace_sources == ["harbor"]
+        assert c.focus == "failure"
+        assert c.min_cluster_size == 3
+        assert c.success_threshold == 1.0
+
+    def test_absent_section_uses_defaults(self, tmp_path):
+        cfg = load_config(config_path=_write_project(tmp_path))
+        assert cfg.continuous.enabled is False
+        assert cfg.continuous.trace_sources == ["harbor"]
+
+
+class TestContinuousConfigParsing:
+    def test_overrides_parsed(self, tmp_path):
+        toml = (
+            "\n[continuous]\n"
+            "enabled = true\n"
+            'trace_sources = ["harbor", "jsonl"]\n'
+            "harvest_window = 50\n"
+            "min_cluster_size = 5\n"
+            "similarity_threshold = 0.5\n"
+            'focus = "both"\n'
+        )
+        cfg = load_config(config_path=_write_project(tmp_path, toml))
+        assert cfg.continuous.enabled is True
+        assert cfg.continuous.trace_sources == ["harbor", "jsonl"]
+        assert cfg.continuous.harvest_window == 50
+        assert cfg.continuous.min_cluster_size == 5
+        assert cfg.continuous.similarity_threshold == 0.5
+        assert cfg.continuous.focus == "both"
+
+
+class TestDerivedPaths:
+    def test_traces_root_defaults_to_harbor_jobs(self, tmp_path):
+        cfg = load_config(config_path=_write_project(tmp_path))
+        assert cfg.continuous_traces_root == tmp_path / ".evoskill" / "harbor_jobs"
+
+    def test_traces_root_relative_override(self, tmp_path):
+        cfg = load_config(config_path=_write_project(tmp_path, '\n[continuous]\ntraces_root = "mytraces"\n'))
+        assert cfg.continuous_traces_root == tmp_path / "mytraces"
+
+    def test_traces_root_absolute_override(self, tmp_path):
+        abs_path = tmp_path / "abs" / "traces"
+        cfg = load_config(config_path=_write_project(
+            tmp_path, f'\n[continuous]\ntraces_root = "{abs_path}"\n'))
+        assert cfg.continuous_traces_root == abs_path
+
+    def test_candidates_dir(self, tmp_path):
+        cfg = load_config(config_path=_write_project(tmp_path))
+        assert cfg.continuous_candidates_dir == tmp_path / ".evoskill" / "continuous" / "candidates"
+
+    def test_harbor_jobs_dir_respects_config(self, tmp_path):
+        cfg = load_config(config_path=_write_project(tmp_path))
+        # default
+        assert cfg.harbor_jobs_dir == tmp_path / ".evoskill" / "harbor_jobs"

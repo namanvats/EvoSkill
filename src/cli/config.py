@@ -84,6 +84,27 @@ class HarborConfig:
 
 
 @dataclass
+class ContinuousConfig:
+    """Continuous evolution: learn skills from real usage traces.
+
+    Phase 1 (harvest) uses the harvest-relevant fields below. Later phases add
+    graduation/lifecycle/signal settings to this same section.
+    """
+    enabled: bool = False
+    trace_sources: list[str] = field(default_factory=lambda: ['harbor'])  # harbor | goose | jsonl
+    traces_root: str = ''                 # override; default <project>/.evoskill/harbor_jobs
+    jsonl_path: str = ''                  # path for the 'jsonl' source
+    harvest_window: int = 200             # max episodes per harvest
+    min_cluster_size: int = 3             # episodes needed to justify a candidate
+    similarity_threshold: float = 0.3     # cosine threshold for clustering
+    max_candidates: int | None = None     # cap clusters distilled per harvest
+    focus: Literal['failure', 'success', 'both'] = 'failure'
+    distiller_model: str | None = None    # defaults to harness.model
+    concurrency: int = 4                  # parallel distiller calls
+    success_threshold: float = 1.0        # verifier reward >= this counts as success
+
+
+@dataclass
 class ScorerConfig:
     type: Literal['exact', 'multi_tolerance', 'llm', 'script', 'harbor'] = 'multi_tolerance'
     rubric: str | None = None
@@ -128,6 +149,7 @@ class ProjectConfig:
     scorer: ScorerConfig = field(default_factory=ScorerConfig)
     remote: RemoteConfig | None = None
     harbor: HarborConfig = field(default_factory=HarborConfig)
+    continuous: ContinuousConfig = field(default_factory=ContinuousConfig)
     execution: str = 'local'  # 'local', 'docker', or 'daytona'
     project_root: Path = field(default_factory=Path.cwd)
     task_description: str = ''
@@ -154,6 +176,27 @@ class ProjectConfig:
             return Path(override)
         path = Path(self.dataset.harbor_tasks_root)
         return path if path.is_absolute() else self.project_root / path
+
+    @property
+    def harbor_jobs_dir(self) -> Path:
+        """Where Harbor trial output (incl. trajectory.json) is written."""
+        if self.harbor.jobs_dir:
+            path = Path(self.harbor.jobs_dir)
+            return path if path.is_absolute() else self.project_root / path
+        return self.evoskill_dir / 'harbor_jobs'
+
+    @property
+    def continuous_traces_root(self) -> Path:
+        """Default trace root for continuous harvest (Harbor job output)."""
+        if self.continuous.traces_root:
+            path = Path(self.continuous.traces_root)
+            return path if path.is_absolute() else self.project_root / path
+        return self.harbor_jobs_dir
+
+    @property
+    def continuous_candidates_dir(self) -> Path:
+        """Where harvested candidate skills are buffered for review."""
+        return self.evoskill_dir / 'continuous' / 'candidates'
 
 
 def _find_project_root(start: Path | None = None) -> Path | None:
@@ -271,6 +314,10 @@ def load_config(
     harbor_raw = dict(raw.get('harbor', {}))
     harbor = HarborConfig(**harbor_raw) if harbor_raw else HarborConfig()
 
+    # Parse [continuous] section (optional)
+    continuous_raw = dict(raw.get('continuous', {}))
+    continuous = ContinuousConfig(**continuous_raw) if continuous_raw else ContinuousConfig()
+
     return ProjectConfig(
         harness=harness,
         evolution=evolution,
@@ -278,6 +325,7 @@ def load_config(
         scorer=scorer,
         remote=remote,
         harbor=harbor,
+        continuous=continuous,
         execution=execution,
         project_root=root,
         task_description=description,

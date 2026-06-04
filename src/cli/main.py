@@ -8,6 +8,8 @@ _COMMAND_SPECS = {
     "init": ("src.cli.commands.init", "init_cmd", "Initialize a new EvoSkill project in the current directory."),
     "run": ("src.cli.commands.run", "run_cmd", "Run the self-improvement loop."),
     "eval": ("src.cli.commands.eval", "eval_cmd", "Evaluate the best skills on the validation set."),
+    "harvest": ("src.cli.commands.harvest", "harvest_cmd", "Distill candidate skills from real usage traces."),
+    "candidates": ("src.cli.commands.candidates", "candidates_cmd", "List/inspect harvested candidate skills."),
     "skills": ("src.cli.commands.skills", "skills_cmd", "List all skills learned so far."),
     "diff": ("src.cli.commands.diff", "diff_cmd", "Diff baseline vs best, or between two specific iterations."),
     "logs": ("src.cli.commands.logs", "logs_cmd", "Show recent run history."),
