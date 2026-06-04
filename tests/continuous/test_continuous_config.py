@@ -96,6 +96,26 @@ class TestGraduationConfig:
         assert cfg.continuous.shadow_eval_size == 25
 
 
+class TestWatchConfig:
+    def test_defaults(self, tmp_path):
+        cfg = load_config(config_path=_write_project(tmp_path))
+        assert cfg.continuous.poll_interval_sec == 600
+        assert cfg.continuous.cost_ceiling_usd_per_tick == 0.0
+        assert cfg.continuous.auto_deprecate is False
+
+    def test_overrides(self, tmp_path):
+        toml = (
+            "\n[continuous]\n"
+            "poll_interval_sec = 120\n"
+            "cost_ceiling_usd_per_tick = 2.5\n"
+            "auto_deprecate = true\n"
+        )
+        cfg = load_config(config_path=_write_project(tmp_path, toml))
+        assert cfg.continuous.poll_interval_sec == 120
+        assert cfg.continuous.cost_ceiling_usd_per_tick == 2.5
+        assert cfg.continuous.auto_deprecate is True
+
+
 class TestDerivedPaths:
     def test_traces_root_defaults_to_harbor_jobs(self, tmp_path):
         cfg = load_config(config_path=_write_project(tmp_path))

@@ -120,6 +120,10 @@ class ContinuousConfig:
     shadow_eval_size: int = 10            # held-out tasks shown to the verifier
     max_graduations_per_window: int = 2   # rate limit (used by the watch daemon)
     surrogate_model: str | None = None    # defaults to harness.model
+    # Watch daemon (Phase 4)
+    poll_interval_sec: int = 600          # seconds between watch ticks
+    cost_ceiling_usd_per_tick: float = 0.0  # 0 = unlimited; else stop a tick past this spend
+    auto_deprecate: bool = False          # in auto mode, archive skills past the strike limit
     lifecycle: LifecycleConfig = field(default_factory=LifecycleConfig)
 
 

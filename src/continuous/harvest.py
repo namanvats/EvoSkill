@@ -123,10 +123,67 @@ class HarvestResult:
     candidates: list[Candidate]
     failed_distillations: int = 0
     skipped_clusters: int = field(default=0)
+    cost_usd: float = 0.0
 
     @property
     def num_candidates(self) -> int:
         return len(self.candidates)
+
+
+async def distill_clusters(
+    clusters: list[EpisodeCluster],
+    distiller: DistillerLike,
+    store: CandidateStore,
+    *,
+    source: str = "harvest",
+    concurrency: int = 4,
+    log: _Logger | None = None,
+) -> tuple[list[Candidate], int, float]:
+    """Distill one candidate per cluster and persist them.
+
+    Shared by the offline `harvest()` and the `watch` daemon's tick so both use
+    one distillation path. Returns (candidates, failed_count, total_cost_usd).
+    A cluster whose distillation errors or yields no usable skill is counted as
+    failed (never aborts the batch).
+    """
+    emit = log or (lambda _msg: None)
+    if not clusters:
+        return [], 0, 0.0
+
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+
+    async def _distill(cluster: EpisodeCluster) -> tuple[Candidate | None, float]:
+        async with semaphore:
+            query = build_distiller_query(cluster)
+            try:
+                trace = await distiller.run(query)
+            except Exception as exc:  # noqa: BLE001 - one bad cluster shouldn't abort the batch
+                emit(f"  [warn] distillation failed for cluster '{cluster.key}': {exc}")
+                return None, 0.0
+            cost = float(getattr(trace, "total_cost_usd", 0.0) or 0.0)
+            candidate = _candidate_from_output(
+                getattr(trace, "output", None), cluster,
+                source=source, model_name=getattr(trace, "model", None),
+            )
+            if candidate is None:
+                emit(f"  [warn] distiller produced no usable skill for '{cluster.key}'")
+            return candidate, cost
+
+    results = await asyncio.gather(*[_distill(c) for c in clusters])
+
+    candidates: list[Candidate] = []
+    failed = 0
+    total_cost = 0.0
+    for candidate, cost in results:
+        total_cost += cost
+        if candidate is None:
+            failed += 1
+            continue
+        store.save(candidate)
+        candidates.append(candidate)
+        emit(f"  + candidate '{candidate.skill_name}' "
+             f"(from {candidate.cluster_size} episodes) → {candidate.candidate_id}")
+    return candidates, failed, total_cost
 
 
 def _candidate_from_output(
@@ -213,41 +270,14 @@ async def harvest(
     if not clusters:
         return HarvestResult(episodes_collected=len(episodes), clusters=[], candidates=[])
 
-    semaphore = asyncio.Semaphore(max(1, concurrency))
-
-    async def _distill(cluster: EpisodeCluster) -> Candidate | None:
-        async with semaphore:
-            query = build_distiller_query(cluster)
-            try:
-                trace = await distiller.run(query)
-            except Exception as exc:  # noqa: BLE001 - one bad cluster shouldn't abort harvest
-                emit(f"  [warn] distillation failed for cluster '{cluster.key}': {exc}")
-                return None
-            output = getattr(trace, "output", None)
-            model_name = getattr(trace, "model", None)
-            candidate = _candidate_from_output(
-                output, cluster, source=source, model_name=model_name
-            )
-            if candidate is None:
-                emit(f"  [warn] distiller produced no usable skill for '{cluster.key}'")
-            return candidate
-
-    results = await asyncio.gather(*[_distill(c) for c in clusters])
-
-    candidates: list[Candidate] = []
-    failed = 0
-    for candidate in results:
-        if candidate is None:
-            failed += 1
-            continue
-        store.save(candidate)
-        candidates.append(candidate)
-        emit(f"  + candidate '{candidate.skill_name}' "
-             f"(from {candidate.cluster_size} episodes) → {candidate.candidate_id}")
+    candidates, failed, cost = await distill_clusters(
+        clusters, distiller, store, source=source, concurrency=concurrency, log=emit,
+    )
 
     return HarvestResult(
         episodes_collected=len(episodes),
         clusters=clusters,
         candidates=candidates,
         failed_distillations=failed,
+        cost_usd=cost,
     )

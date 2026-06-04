@@ -15,6 +15,7 @@ from src.cli.commands.candidates import candidates_cmd
 from src.cli.commands.graduate import graduate_cmd, reject_cmd
 from src.cli.commands.harvest import harvest_cmd
 from src.cli.commands.library import library_cmd
+from src.cli.commands.watch import watch_cmd
 from src.continuous.candidates import Candidate, CandidateStore
 
 from .conftest import make_trial
@@ -193,3 +194,20 @@ class TestGraduateCli:
         cfg = _project(tmp_path)
         result = CliRunner().invoke(reject_cmd, ["--config", str(cfg), "nope"])
         assert result.exit_code == 1
+
+
+class TestWatchCli:
+    def test_once_review_no_traces(self, tmp_path):
+        # review mode + empty traces dir → one tick, 0 episodes, no LLM/git needed.
+        cfg = _project(tmp_path)
+        (tmp_path / ".evoskill" / "harbor_jobs").mkdir(parents=True)
+        result = CliRunner().invoke(watch_cmd, ["--config", str(cfg), "--once"])
+        assert result.exit_code == 0, result.output
+        assert "Ran 1 tick(s)" in result.output
+        assert "0 episodes" in result.output
+
+    def test_no_usable_sources_errors(self, tmp_path):
+        cfg = _project(tmp_path, '\n[continuous]\ntrace_sources = ["jsonl"]\n')
+        result = CliRunner().invoke(watch_cmd, ["--config", str(cfg), "--once"])
+        assert result.exit_code == 1
+        assert "no usable trace sources" in result.output

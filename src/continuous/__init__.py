@@ -37,6 +37,7 @@ from .harvest import (
     HarvestResult,
     build_distiller_query,
     build_readers,
+    distill_clusters,
     harvest,
     slugify_skill_name,
 )
@@ -78,6 +79,14 @@ from .gate import (
     run_gate,
 )
 from .graduation import GraduationResult, graduate, install_skill
+from .loop import (
+    CostMeter,
+    MeteredAgent,
+    TickConfig,
+    TickReport,
+    run_tick,
+    run_watch_loop,
+)
 
 __all__ = [
     # episode model
@@ -112,6 +121,7 @@ __all__ = [
     "HarvestResult",
     "build_distiller_query",
     "build_readers",
+    "distill_clusters",
     "harvest",
     "slugify_skill_name",
     # library
@@ -154,4 +164,11 @@ __all__ = [
     "GraduationResult",
     "graduate",
     "install_skill",
+    # loop / watch tick
+    "CostMeter",
+    "MeteredAgent",
+    "TickConfig",
+    "TickReport",
+    "run_tick",
+    "run_watch_loop",
 ]
