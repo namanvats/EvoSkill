@@ -94,19 +94,19 @@ ensure_repo() {
     echo "$target"
 }
 
-python_version_ok() {
+python_version_is_312() {
     local py="$1"
     "$py" - <<'PY' 2>/dev/null
 import sys
-raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)
 PY
 }
 
-find_python() {
+find_python_312() {
     local candidate
-    for candidate in "${EVOSKILL_PYTHON:-}" python3.12 python3 python; do
+    for candidate in "${EVOSKILL_PYTHON:-}" python3.12; do
         [[ -n "$candidate" ]] || continue
-        if command -v "$candidate" &>/dev/null && python_version_ok "$candidate"; then
+        if command -v "$candidate" &>/dev/null && python_version_is_312 "$candidate"; then
             echo "$candidate"
             return 0
         fi
@@ -114,46 +114,62 @@ find_python() {
     return 1
 }
 
-install_python() {
-    printf "\n  %s\n" "$(bold 'Installing Python 3.12+...')"
+try_install_python_312() {
+    printf "\n  %s\n" "$(bold 'Attempting to install Python 3.12...')"
 
     if [[ "$(uname -s)" == "Darwin" ]] && command -v brew &>/dev/null; then
-        brew install python@3.12
-        if [[ -x "$(brew --prefix python@3.12)/bin/python3.12" ]]; then
-            echo "$(brew --prefix python@3.12)/bin/python3.12"
-            return 0
+        if brew install python@3.12; then
+            if [[ -x "$(brew --prefix python@3.12)/bin/python3.12" ]]; then
+                info "Installed Python via Homebrew"
+                echo "$(brew --prefix python@3.12)/bin/python3.12"
+                return 0
+            fi
+        else
+            warn "Homebrew install of python@3.12 failed — skipped"
         fi
     fi
 
     if command -v apt-get &>/dev/null; then
-        warn "Attempting apt install (may require sudo)"
-        sudo apt-get update
-        sudo apt-get install -y python3.12 python3.12-venv python3-pip
-        command -v python3.12 && return 0
+        warn "python3.12 is not in default Ubuntu repos (deadsnakes PPA is often required)"
+        if sudo apt-get update && sudo apt-get install -y python3.12 python3.12-venv python3-pip; then
+            if command -v python3.12 &>/dev/null; then
+                info "Installed Python via apt"
+                echo "python3.12"
+                return 0
+            fi
+        else
+            warn "apt install of python3.12 failed — skipped"
+        fi
     fi
 
-    fail "Python ${MIN_PYTHON}+ not found. Install it manually: https://www.python.org/downloads/"
+    return 1
 }
 
-ensure_python() {
-    if py="$(find_python)"; then
+ensure_python_for_uv() {
+    ensure_uv
+    printf "\n  %s\n" "$(bold 'Installing Python 3.12 via uv...')"
+    uv python install "$MIN_PYTHON"
+    uv python pin "$MIN_PYTHON"
+    local py
+    py="$(uv python find "$MIN_PYTHON")"
+    info "Python pinned to 3.12: $($py --version 2>&1)"
+}
+
+ensure_python_for_pip() {
+    local py=""
+    if py="$(find_python_312)"; then
         info "Python found: $($py --version 2>&1)"
         echo "$py"
         return 0
     fi
 
-    # uv can download and manage Python 3.12+ when the system Python is too old.
-    if [[ "${USE_PIP:-0}" != "1" ]]; then
-        ensure_uv
-        printf "\n  %s\n" "$(bold 'Installing Python 3.12 via uv...')"
-        uv python install "$MIN_PYTHON"
-        py="$(uv python find "$MIN_PYTHON")"
+    if py="$(try_install_python_312)" && python_version_is_312 "$py"; then
         info "Python ready: $($py --version 2>&1)"
         echo "$py"
         return 0
     fi
 
-    install_python
+    fail "Python 3.12 not found for --pip mode. Omit --pip to use uv (recommended), or install Python 3.12 manually: https://www.python.org/downloads/"
 }
 
 ensure_uv() {
@@ -175,6 +191,19 @@ ensure_uv() {
     info "uv installed: $(uv --version)"
 }
 
+ensure_pip_venv() {
+    local repo_root="$1"
+    local py="$2"
+    local venv="$repo_root/.venv"
+
+    if [[ ! -x "$venv/bin/python" ]]; then
+        "$py" -m venv "$venv"
+        info "Created virtualenv at $venv"
+    fi
+
+    echo "$venv/bin/python"
+}
+
 install_project() {
     local repo_root="$1"
     local use_pip="$2"
@@ -183,15 +212,16 @@ install_project() {
     printf "\n  %s\n" "$(bold 'Installing EvoSkill dependencies...')"
 
     if [[ "$use_pip" == "1" ]]; then
-        local py
-        py="$(ensure_python)"
-        "$py" -m pip install --upgrade pip
-        "$py" -m pip install -e .
-        info "Installed with pip"
+        local py venv_py
+        py="$(ensure_python_for_pip)"
+        venv_py="$(ensure_pip_venv "$repo_root" "$py")"
+        "$venv_py" -m pip install --upgrade pip
+        "$venv_py" -m pip install -e .
+        info "Installed with pip into .venv"
     else
-        ensure_uv
-        uv sync
-        info "Installed with uv sync"
+        ensure_python_for_uv
+        uv sync --python "$MIN_PYTHON"
+        info "Installed with uv sync (Python 3.12)"
     fi
 
     if command -v evoskill &>/dev/null; then
@@ -258,8 +288,11 @@ install_agents() {
         fi
 
         if [[ "$(uname -s)" == "Darwin" ]] && command -v brew &>/dev/null; then
-            install_agent_brew "$agent"
-            info "Installed $agent"
+            if install_agent_brew "$agent"; then
+                info "Installed $agent"
+            else
+                warn "Failed to install $agent via Homebrew — continuing with remaining agents"
+            fi
         else
             warn "Skipping $agent — auto-install is macOS/Homebrew only."
             case "$agent" in
